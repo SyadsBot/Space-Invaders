@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#080d1a">
+  <title>Galaxy Defender - Arcade</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: clamp(16px, 4vw, 48px);
+      display: grid;
+      place-items: center;
+      color: #e8efff;
+      background:
+        radial-gradient(ellipse at 50% 0%, rgba(52, 73, 132, 0.28), transparent 55%),
+        #080d1a;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    .game-shell {
+      width: min(100%, 920px);
+      padding: clamp(18px, 3vw, 30px);
+      overflow: hidden;
+      border: 1px solid rgba(135, 161, 255, 0.2);
+      border-radius: 20px;
+      background: linear-gradient(145deg, rgba(20, 29, 53, 0.97), rgba(11, 17, 33, 0.98));
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48), 0 0 48px rgba(75, 101, 225, 0.08);
+    }
+
+    .game-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .game-title {
+      margin: 0;
+      color: #f4f7ff;
+      font-size: clamp(1.2rem, 3vw, 1.65rem);
+      font-weight: 750;
+      letter-spacing: 0.08em;
+    }
+
+    .game-subtitle {
+      margin: 6px 0 0;
+      color: #9aa8c8;
+      font-size: 0.9rem;
+    }
+
+    .status-badge {
+      flex: 0 0 auto;
+      padding: 8px 11px;
+      border: 1px solid rgba(91, 255, 156, 0.28);
+      border-radius: 999px;
+      color: #80ffb2;
+      background: rgba(37, 168, 96, 0.1);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+    }
+
+    .canvas-frame {
+      overflow: hidden;
+      border: 1px solid rgba(103, 128, 208, 0.45);
+      border-radius: 12px;
+      background: #000;
+      box-shadow: 0 0 32px rgba(67, 93, 220, 0.12);
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      image-rendering: pixelated;
+    }
+
+    .game-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 14px 24px;
+      padding-top: 20px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 20px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .control-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #b7c2dc;
+      font-size: 0.85rem;
+    }
+
+    kbd {
+      min-width: 30px;
+      padding: 5px 8px;
+      border: 1px solid rgba(159, 178, 232, 0.24);
+      border-bottom-width: 2px;
+      border-radius: 6px;
+      color: #f3f6ff;
+      background: rgba(255, 255, 255, 0.06);
+      font: 600 0.75rem ui-monospace, SFMono-Regular, Consolas, monospace;
+      text-align: center;
+    }
+
+    .game-hint {
+      margin: 0;
+      color: #7887a9;
+      font-size: 0.78rem;
+    }
+
+    @media (max-width: 520px) {
+      .game-header {
+        align-items: flex-start;
+      }
+
+      .status-badge {
+        padding: 7px 9px;
+        font-size: 0.62rem;
+      }
+
+      .game-footer {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="game-shell">
+    <header class="game-header">
+      <div>
+        <h1 class="game-title">GALAXY DEFENDER</h1>
+        <p class="game-subtitle">Protect the sector. Hold the line.</p>
+      </div>
+      <span class="status-badge">ARCADE MODE</span>
+    </header>
+
+    <div class="canvas-frame">
+      <canvas id="gameCanvas" width="800" height="600" aria-label="Galaxy Defender arcade game"></canvas>
+    </div>
+
+    <footer class="game-footer">
+      <ul class="controls" aria-label="Game controls">
+        <li class="control-item"><kbd>←</kbd><kbd>→</kbd> Move</li>
+        <li class="control-item"><kbd>SPACE</kbd> Fire</li>
+        <li class="control-item"><kbd>R</kbd> Restart</li>
+      </ul>
+      <p class="game-hint">Aim for the invaders. Use shields for cover.</p>
+    </footer>
+  </main>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const context = canvas.getContext("2d");
+    const colors = {
+      background: "#000000",
+      invader: "#55ff55",
+      shield: "#55ff55",
+      player: "#ffffff",
+      playerShot: "#ffffff",
+      invaderShot: "#ff6666"
+    };
+
+    const ship = {
+      width: 40,
+      height: 20,
+      x: (canvas.width - 40) / 2,
+      y: canvas.height - 40,
+      speed: 300
+    };
+
+    const keys = {
+      ArrowLeft: false,
+      ArrowRight: false,
+      Space: false
+    };
+
+    const invaderFrames = [
+      [
+        [
+          "   11 11   ",
+          "    111    ",
+          "  1111111  ",
+          " 11 111 11 ",
+          "11111111111",
+          "1 1111111 1",
+          "   1   1   ",
+          "  11   11  "
+        ],
+        [
+          "   11 11   ",
+          "    111    ",
+          "  1111111  ",
+          " 11 111 11 ",
+          "11111111111",
+          "1 1111111 1",
+          "  11   11  ",
+          " 11     11 "
+        ]
+      ],
+      [
+        [
+          "  1     1  ",
+          "   1   1   ",
+          "  1111111  ",
+          " 111111111 ",
+          "11 11111 11",
+          "11111111111",
+          " 1 1   1 1 ",
+          "1   1 1   1"
+        ],
+        [
+          "  1     1  ",
+          "   1   1   ",
+          "  1111111  ",
+          " 111111111 ",
+          "11 11111 11",
+          "11111111111",
+          "  11   11  ",
+          " 1 1   1 1 "
+        ]
+      ],
+      [
+        [
+          "    111    ",
+          "  1111111  ",
+          " 111111111 ",
+          "111 111 111",
+          "11111111111",
+          "  11 11 11 ",
+          " 11  1  11 ",
+          "11       11"
+        ],
+        [
+          "    111    ",
+          "  1111111  ",
+          " 111111111 ",
+          "111 111 111",
+          "11111111111",
+          "  11 11 11 ",
+          "11   1   11",
+          "  11   11  "
+        ]
+      ]
+    ];
+
+    const invaderRows = 5;
+    const invaderColumns = 11;
+    const invaderCellSize = 2;
+    const invaderWidth = 11 * invaderCellSize;
+    const invaderHeight = 8 * invaderCellSize;
+    const invaderStep = 8;
+    const invaderMoveInterval = 0.55;
+
+    const playerShotSpeed = 460;
+    const invaderShotSpeed = 230;
+    const playerFireInterval = 0.3;
+    const playerRespawnProtection = 1.5;
+    const invaderPoints = [30, 20, 10];
+    const shieldCellSize = 4;
+    const shieldRows = [
+      "......1111......",
+      "....11111111....",
+      "...1111111111...",
+      "..111111111111..",
+      ".11111111111111.",
+      "1111111111111111",
+      "1111111111111111",
+      "1111111111111111",
+      "1111111111111111",
+      "11111......11111",
+      "1111........1111"
+    ];
+    const invaders = [];
+    const playerShots = [];
+    const invaderShots = [];
+    const shields = [];
+    let lives = 3;
+    let score = 0;
+    let gameState = "menu";
+    let playerFireTimer = 0;
+    let invaderFireTimer = 1;
+    let protectionTimer = 0;
+    let audioContext = null;
+    let audioUnavailable = false;
+
+    function createInvaders() {
+      invaders.length = 0;
+
+      for (let row = 0; row < invaderRows; row += 1) {
+        for (let column = 0; column < invaderColumns; column += 1) {
+          invaders.push({
+            x: 100 + column * 48,
+            y: 58 + row * 38,
+            type: row === 0 ? 0 : row < 3 ? 1 : 2,
+            column
+          });
+        }
+      }
+    }
+
+    function createShields() {
+      shields.length = 0;
+
+      for (const centerX of [100, 300, 500, 700]) {
+        shields.push({
+          x: centerX - (shieldRows[0].length * shieldCellSize) / 2,
+          y: 438,
+          pixels: shieldRows.map((row) => [...row].map((pixel) => pixel === "1"))
+        });
+      }
+    }
+
+    createInvaders();
+    createShields();
+
+    let invaderDirection = 1;
+    let invaderFrame = 0;
+    let invaderMoveTimer = 0;
+    let menuAnimationTimer = 0;
+
+    window.addEventListener("keydown", (event) => {
+      initializeAudio();
+
+      if (gameState === "menu" && (event.code === "Space" || event.code === "Enter")) {
+        event.preventDefault();
+        resetGame();
+        keys.Space = false;
+        return;
+      }
+
+      if (event.code === "Space") {
+        event.preventDefault();
+        keys.Space = true;
+      }
+
+      if (event.key in keys) {
+        event.preventDefault();
+        keys[event.key] = true;
+      }
+
+      if (event.key.toLowerCase() === "r" && gameState !== "playing") {
+        resetGame();
+      }
+    });
+
+    window.addEventListener("keyup", (event) => {
+      if (event.code === "Space") {
+        event.preventDefault();
+        keys.Space = false;
+      }
+
+      if (event.key in keys) {
+        event.preventDefault();
+        keys[event.key] = false;
+      }
+    });
+
+    let previousTime = 0;
+
+    function resetGame() {
+      ship.x = (canvas.width - ship.width) / 2;
+      lives = 3;
+      score = 0;
+      gameState = "playing";
+      playerFireTimer = 0;
+      invaderFireTimer = 1;
+      protectionTimer = 0;
+      keys.ArrowLeft = false;
+      keys.ArrowRight = false;
+      keys.Space = false;
+      playerShots.length = 0;
+      invaderShots.length = 0;
+      invaderDirection = 1;
+      invaderFrame = 0;
+      invaderMoveTimer = 0;
+      menuAnimationTimer = 0;
+      createInvaders();
+      createShields();
+    }
+
+    function initializeAudio() {
+      if (audioContext || audioUnavailable) {
+        return;
+      }
+
+      const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextConstructor) {
+        audioUnavailable = true;
+        console.warn("Web Audio is not supported in this browser.");
+        return;
+      }
+
+      audioContext = new AudioContextConstructor();
+      if (audioContext.state === "suspended") {
+        audioContext.resume().catch((error) => {
+          console.error("Unable to start Web Audio:", error);
+        });
+      }
+    }
+
+    function playTone(startFrequency, endFrequency, duration, startTime, type, volume) {
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(startFrequency, startTime);
+      oscillator.frequency.exponentialRampToValueAtTime(endFrequency, startTime + duration);
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.linearRampToValueAtTime(volume, startTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start(startTime);
+      oscillator.stop(startTime + duration);
+    }
+
+    function playSound(effect) {
+      if (!audioContext) {
+        return;
+      }
+
+      const now = audioContext.currentTime;
+      if (effect === "shoot") {
+        playTone(880, 360, 0.09, now, "square", 0.035);
+      } else if (effect === "explosion") {
+        playTone(210, 55, 0.22, now, "sawtooth", 0.07);
+      } else if (effect === "gameOver") {
+        playTone(440, 330, 0.18, now, "square", 0.05);
+        playTone(330, 220, 0.22, now + 0.2, "square", 0.05);
+        playTone(220, 110, 0.4, now + 0.45, "square", 0.05);
+      }
+    }
+
+    function rectanglesOverlap(first, second) {
+      return first.x < second.x + second.width &&
+        first.x + first.width > second.x &&
+        first.y < second.y + second.height &&
+        first.y + first.height > second.y;
+    }
+
+    function fireInvaderShot() {
+      const livingColumns = [...new Set(invaders.map((invader) => invader.column))];
+      if (livingColumns.length === 0) {
+        return;
+      }
+
+      const targetX = ship.x + ship.width / 2;
+      const column = livingColumns.reduce((closestColumn, candidateColumn) => {
+        const candidateInvader = invaders.find((invader) => invader.column === candidateColumn);
+        const closestInvader = invaders.find((invader) => invader.column === closestColumn);
+        const candidateDistance = Math.abs(candidateInvader.x + invaderWidth / 2 - targetX);
+        const closestDistance = Math.abs(closestInvader.x + invaderWidth / 2 - targetX);
+        return candidateDistance < closestDistance ? candidateColumn : closestColumn;
+      });
+      const shooter = invaders
+        .filter((invader) => invader.column === column)
+        .reduce((lowest, invader) => invader.y > lowest.y ? invader : lowest);
+
+      invaderShots.push({
+        x: shooter.x + invaderWidth / 2 - 2,
+        y: shooter.y + invaderHeight,
+        width: 4,
+        height: 10
+      });
+    }
+
+    function damageShield(shot) {
+      for (const shield of shields) {
+        const firstColumn = Math.max(0, Math.floor((shot.x - shield.x) / shieldCellSize));
+        const lastColumn = Math.min(
+          shield.pixels[0].length - 1,
+          Math.floor((shot.x + shot.width - shield.x) / shieldCellSize)
+        );
+        const firstRow = Math.max(0, Math.floor((shot.y - shield.y) / shieldCellSize));
+        const lastRow = Math.min(
+          shield.pixels.length - 1,
+          Math.floor((shot.y + shot.height - shield.y) / shieldCellSize)
+        );
+
+        for (let row = firstRow; row <= lastRow; row += 1) {
+          for (let column = firstColumn; column <= lastColumn; column += 1) {
+            if (!shield.pixels[row][column]) {
+              continue;
+            }
+
+            const pixel = {
+              x: shield.x + column * shieldCellSize,
+              y: shield.y + row * shieldCellSize,
+              width: shieldCellSize,
+              height: shieldCellSize
+            };
+            if (!rectanglesOverlap(shot, pixel)) {
+              continue;
+            }
+
+            for (let damageRow = Math.max(0, row - 1); damageRow <= Math.min(shield.pixels.length - 1, row + 1); damageRow += 1) {
+              for (let damageColumn = Math.max(0, column - 1); damageColumn <= Math.min(shield.pixels[0].length - 1, column + 1); damageColumn += 1) {
+                shield.pixels[damageRow][damageColumn] = false;
+              }
+            }
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    function updateProjectiles(elapsedTime) {
+      playerShots.forEach((shot) => {
+        shot.y -= playerShotSpeed * elapsedTime;
+      });
+      invaderShots.forEach((shot) => {
+        shot.y += invaderShotSpeed * elapsedTime;
+      });
+
+      for (let shotIndex = playerShots.length - 1; shotIndex >= 0; shotIndex -= 1) {
+        const shot = playerShots[shotIndex];
+        if (damageShield(shot)) {
+          playerShots.splice(shotIndex, 1);
+          continue;
+        }
+
+        const targetIndex = invaders.findIndex((invader) =>
+          rectanglesOverlap(shot, {
+            x: invader.x,
+            y: invader.y,
+            width: invaderWidth,
+            height: invaderHeight
+          })
+        );
+
+        if (targetIndex !== -1) {
+          score += invaderPoints[invaders[targetIndex].type];
+          invaders.splice(targetIndex, 1);
+          playerShots.splice(shotIndex, 1);
+          playSound("explosion");
+        }
+      }
+
+      for (let shotIndex = invaderShots.length - 1; shotIndex >= 0; shotIndex -= 1) {
+        const shot = invaderShots[shotIndex];
+        if (
+          shot.y > canvas.height ||
+          shot.y + shot.height < 0 ||
+          shot.x + shot.width < 0 ||
+          shot.x > canvas.width
+        ) {
+          invaderShots.splice(shotIndex, 1);
+        } else if (damageShield(shot)) {
+          invaderShots.splice(shotIndex, 1);
+        } else if (
+          protectionTimer <= 0 &&
+          rectanglesOverlap(shot, {
+            x: ship.x,
+            y: ship.y,
+            width: ship.width,
+            height: ship.height
+          })
+        ) {
+          invaderShots.splice(shotIndex, 1);
+          lives -= 1;
+          if (lives === 0) {
+            gameState = "gameOver";
+            playerShots.length = 0;
+            invaderShots.length = 0;
+            playSound("gameOver");
+            break;
+          } else {
+            ship.x = (canvas.width - ship.width) / 2;
+            invaderShots.length = 0;
+            protectionTimer = playerRespawnProtection;
+          }
+        }
+      }
+
+      for (let shotIndex = playerShots.length - 1; shotIndex >= 0; shotIndex -= 1) {
+        if (playerShots[shotIndex].y + playerShots[shotIndex].height < 0) {
+          playerShots.splice(shotIndex, 1);
+        }
+      }
+    }
+
+    function drawProjectiles() {
+      context.fillStyle = colors.playerShot;
+      playerShots.forEach((shot) => {
+        context.fillRect(shot.x, shot.y, shot.width, shot.height);
+      });
+
+      context.fillStyle = colors.invaderShot;
+      invaderShots.forEach((shot) => {
+        context.fillRect(shot.x, shot.y, shot.width, shot.height);
+      });
+    }
+
+    function drawShields() {
+      context.fillStyle = colors.shield;
+      shields.forEach((shield) => {
+        shield.pixels.forEach((row, rowIndex) => {
+          row.forEach((pixel, columnIndex) => {
+            if (pixel) {
+              context.fillRect(
+                shield.x + columnIndex * shieldCellSize,
+                shield.y + rowIndex * shieldCellSize,
+                shieldCellSize,
+                shieldCellSize
+              );
+            }
+          });
+        });
+      });
+    }
+
+    function drawStatus() {
+      context.fillStyle = "#ffffff";
+      context.font = "18px monospace";
+      context.textAlign = "left";
+      context.fillText(`LIVES: ${lives}`, 16, 28);
+      context.textAlign = "right";
+      context.fillText(`SCORE: ${score}`, canvas.width - 16, 28);
+    }
+
+    function drawInvader(invader) {
+      const sprite = invaderFrames[invader.type][invaderFrame];
+      context.fillStyle = colors.invader;
+
+      for (let row = 0; row < sprite.length; row += 1) {
+        for (let column = 0; column < sprite[row].length; column += 1) {
+          if (sprite[row][column] === "1") {
+            context.fillRect(
+              invader.x + column * invaderCellSize,
+              invader.y + row * invaderCellSize,
+              invaderCellSize,
+              invaderCellSize
+            );
+          }
+        }
+      }
+    }
+
+    function drawMenu(currentTime) {
+      context.fillStyle = colors.background;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      context.fillStyle = colors.invader;
+      for (const [x, y] of [[82, 72], [706, 91], [124, 180], [667, 210], [92, 370], [720, 390]]) {
+        context.fillRect(x, y, 3, 3);
+      }
+
+      context.textAlign = "center";
+      context.fillStyle = colors.player;
+      context.font = "bold 40px monospace";
+      context.fillText("GALAXY DEFENDER", canvas.width / 2, 112);
+
+      context.fillStyle = colors.invader;
+      context.fillRect(196, 137, 408, 3);
+      context.font = "16px monospace";
+      context.fillText("ARCADE DEFENSE SYSTEM", canvas.width / 2, 174);
+
+      const previews = [
+        { x: 220, type: 0, points: "30 PTS" },
+        { x: 390, type: 1, points: "20 PTS" },
+        { x: 560, type: 2, points: "10 PTS" }
+      ];
+      previews.forEach((preview) => {
+        drawInvader({ x: preview.x - invaderWidth / 2, y: 242, type: preview.type });
+        context.fillStyle = colors.player;
+        context.font = "14px monospace";
+        context.fillText(preview.points, preview.x, 278);
+      });
+
+      context.fillStyle = colors.shield;
+      context.fillRect(canvas.width / 2 - 20, 320, 40, 8);
+      context.fillRect(canvas.width / 2 - 12, 312, 24, 8);
+      context.fillRect(canvas.width / 2 - 5, 304, 10, 8);
+
+      if (Math.floor(currentTime / 450) % 2 === 0) {
+        context.fillStyle = colors.player;
+        context.font = "bold 20px monospace";
+        context.fillText("PRESS SPACE OR ENTER TO START", canvas.width / 2, 396);
+      }
+
+      context.fillStyle = colors.player;
+      context.font = "16px monospace";
+      context.fillText("ARROWS: MOVE     SPACE: FIRE", canvas.width / 2, 456);
+      context.fillText("3 SHIPS  |  SHIELDS BLOCK SHOTS", canvas.width / 2, 487);
+    }
+
+    function drawGameOver() {
+      const panelWidth = 560;
+      const panelHeight = 250;
+      const panelX = (canvas.width - panelWidth) / 2;
+      const panelY = (canvas.height - panelHeight) / 2;
+
+      context.fillStyle = "#050b18";
+      context.fillRect(panelX, panelY, panelWidth, panelHeight);
+      context.strokeStyle = colors.invaderShot;
+      context.lineWidth = 3;
+      context.strokeRect(panelX, panelY, panelWidth, panelHeight);
+
+      context.textAlign = "center";
+      context.fillStyle = colors.invaderShot;
+      context.font = "bold 42px monospace";
+      context.fillText("GAME OVER", canvas.width / 2, panelY + 66);
+
+      context.fillStyle = colors.player;
+      context.font = "20px monospace";
+      context.fillText("FINAL SCORE", canvas.width / 2, panelY + 116);
+
+      context.fillStyle = colors.shield;
+      context.font = "bold 32px monospace";
+      context.fillText(String(score).padStart(6, "0"), canvas.width / 2, panelY + 158);
+
+      context.fillStyle = colors.player;
+      context.font = "16px monospace";
+      context.fillText("PRESS R TO PLAY AGAIN", canvas.width / 2, panelY + 207);
+    }
+
+    function animate(currentTime) {
+      const elapsedTime = previousTime === 0
+        ? 0
+        : Math.min((currentTime - previousTime) / 1000, 0.05);
+      previousTime = currentTime;
+
+      if (gameState === "menu") {
+        menuAnimationTimer += elapsedTime;
+        if (menuAnimationTimer >= 0.35) {
+          menuAnimationTimer -= 0.35;
+          invaderFrame = (invaderFrame + 1) % 2;
+        }
+        drawMenu(currentTime);
+        requestAnimationFrame(animate);
+        return;
+      }
+
+      if (gameState === "playing") {
+        if (keys.ArrowLeft) {
+          ship.x -= ship.speed * elapsedTime;
+        }
+        if (keys.ArrowRight) {
+          ship.x += ship.speed * elapsedTime;
+        }
+
+        ship.x = Math.max(0, Math.min(canvas.width - ship.width, ship.x));
+
+        if (keys.Space) {
+          playerFireTimer -= elapsedTime;
+          if (playerFireTimer <= 0) {
+            playerShots.push({
+              x: ship.x + ship.width / 2 - 2,
+              y: ship.y - 10,
+              width: 4,
+              height: 10
+            });
+            playSound("shoot");
+            playerFireTimer = playerFireInterval;
+          }
+        } else {
+          playerFireTimer = 0;
+        }
+
+        invaderFireTimer -= elapsedTime;
+        if (invaderFireTimer <= 0) {
+          fireInvaderShot();
+          invaderFireTimer = 0.9 + Math.random() * 0.8;
+        }
+
+        invaderMoveTimer += elapsedTime;
+        if (invaderMoveTimer >= invaderMoveInterval) {
+          invaderMoveTimer -= invaderMoveInterval;
+          invaderFrame = (invaderFrame + 1) % 2;
+
+          if (invaders.length > 0) {
+            const leftEdge = Math.min(...invaders.map((invader) => invader.x));
+            const rightEdge = Math.max(...invaders.map((invader) => invader.x)) + invaderWidth;
+            const nextLeftEdge = leftEdge + invaderStep * invaderDirection;
+            const nextRightEdge = rightEdge + invaderStep * invaderDirection;
+
+            if (nextLeftEdge < 0 || nextRightEdge > canvas.width) {
+              invaderDirection *= -1;
+              invaders.forEach((invader) => {
+                invader.y += invaderHeight;
+              });
+            } else {
+              invaders.forEach((invader) => {
+                invader.x += invaderStep * invaderDirection;
+              });
+            }
+          }
+        }
+
+        protectionTimer = Math.max(0, protectionTimer - elapsedTime);
+        updateProjectiles(elapsedTime);
+        if (invaders.length === 0) {
+          gameState = "won";
+        }
+      }
+
+      context.fillStyle = colors.background;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      invaders.forEach(drawInvader);
+      drawShields();
+      drawProjectiles();
+
+      context.globalAlpha = 1;
+      drawStatus();
+      if (gameState === "playing") {
+        if (protectionTimer > 0) {
+          context.globalAlpha = Math.floor(protectionTimer * 12) % 2 === 0 ? 0.35 : 1;
+        }
+        context.fillStyle = colors.player;
+        context.fillRect(ship.x, ship.y, ship.width, ship.height);
+        context.globalAlpha = 1;
+      } else {
+        if (gameState === "gameOver") {
+          drawGameOver();
+        } else {
+          context.fillStyle = colors.player;
+          context.textAlign = "center";
+          context.font = "32px monospace";
+          context.fillText("FORMATION CLEARED", canvas.width / 2, canvas.height / 2);
+          context.font = "18px monospace";
+          context.fillText("Press R to restart", canvas.width / 2, canvas.height / 2 + 36);
+        }
+      }
+
+      requestAnimationFrame(animate);
+    }
+
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
